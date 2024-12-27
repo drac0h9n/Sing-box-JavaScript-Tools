@@ -82,7 +82,8 @@ create_forward_rules() {
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
         # Forward TCP
-        nft add rule ip filter forward ip daddr $DEST_IP tcp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'        HANDLE=$(nft --handle list chain ip filter forward | grep "dport $DEST_PORT" | grep -oP 'handle \K\d+')
+        nft add rule ip filter forward ip daddr $DEST_IP tcp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'
+        HANDLE=$(nft --handle list chain ip filter forward | grep "dport $DEST_PORT" | grep -oP 'handle \K\d+')
         echo "TCP forward handle: $HANDLE"
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
@@ -108,7 +109,8 @@ create_forward_rules() {
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
         # Forward UDP
-        nft add rule ip filter forward ip daddr $DEST_IP udp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'        HANDLE=$(nft --handle list chain ip filter forward | grep "udp.*dport $DEST_PORT" | grep -oP 'handle \K\d+')
+        nft add rule ip filter forward ip daddr $DEST_IP udp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'
+        HANDLE=$(nft --handle list chain ip filter forward | grep "udp.*dport $DEST_PORT" | grep -oP 'handle \K\d+')
         echo "UDP forward handle: $HANDLE"
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
