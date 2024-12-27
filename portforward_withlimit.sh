@@ -64,7 +64,7 @@ create_forward_rules() {
     # 确保handle文件存在并清空
     touch "$HANDLE_FILE"
     > "$HANDLE_FILE"
-    
+
     echo "Adding rules and collecting handles..."
 
     # TCP rules
@@ -82,8 +82,7 @@ create_forward_rules() {
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
         # Forward TCP
-        nft add rule ip filter forward ip daddr $DEST_IP tcp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'
-        HANDLE=$(nft --handle list chain ip filter forward | grep "dport $DEST_PORT" | grep -oP 'handle \K\d+')
+        nft add rule ip filter forward ip daddr $DEST_IP tcp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'        HANDLE=$(nft --handle list chain ip filter forward | grep "dport $DEST_PORT" | grep -oP 'handle \K\d+')
         echo "TCP forward handle: $HANDLE"
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
@@ -109,8 +108,7 @@ create_forward_rules() {
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
         # Forward UDP
-        nft add rule ip filter forward ip daddr $DEST_IP udp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'
-        HANDLE=$(nft --handle list chain ip filter forward | grep "udp.*dport $DEST_PORT" | grep -oP 'handle \K\d+')
+        nft add rule ip filter forward ip daddr $DEST_IP udp dport $DEST_PORT counter comment '"forward traffic from port '"$LOCAL_PORT"' to '"$DEST_IP:$DEST_PORT"'"'        HANDLE=$(nft --handle list chain ip filter forward | grep "udp.*dport $DEST_PORT" | grep -oP 'handle \K\d+')
         echo "UDP forward handle: $HANDLE"
         [ ! -z "$HANDLE" ] && echo "$HANDLE" >> "$HANDLE_FILE"
 
@@ -156,47 +154,47 @@ check_traffic() {
 # 删除特定端口的转发规则
 remove_rules() {
     echo "Starting to remove rules..."
-    
+
     if [ -f "$HANDLE_FILE" ]; then
         echo "Found handle file: $HANDLE_FILE"
         echo "Current handles:"
         cat "$HANDLE_FILE"
-        
+
         while IFS= read -r handle; do
             echo "Attempting to remove rule with handle: $handle"
-            
+
             echo "Removing from portforward prerouting..."
             if nft delete rule ip portforward prerouting handle "$handle" 2>/dev/null; then
                 echo "Successfully removed rule from portforward prerouting"
             else
                 echo "No matching rule found in portforward prerouting"
             fi
-            
+
             echo "Removing from portforward postrouting..."
             if nft delete rule ip portforward postrouting handle "$handle" 2>/dev/null; then
                 echo "Successfully removed rule from portforward postrouting"
             else
                 echo "No matching rule found in portforward postrouting"
             fi
-            
+
             echo "Removing from filter forward..."
             if nft delete rule ip filter forward handle "$handle" 2>/dev/null; then
                 echo "Successfully removed rule from filter forward"
             else
                 echo "No matching rule found in filter forward"
             fi
-            
+
         done < "$HANDLE_FILE"
-        
+
         echo "Removing handle file..."
         rm "$HANDLE_FILE"
         echo "Handle file removed"
     else
         echo "Handle file not found: $HANDLE_FILE"
     fi
-    
+
     echo "Rule removal process completed"
-    
+
     # 显示当前的nft规则，用于验证
     echo "Current nft rules after removal:"
     nft list ruleset
@@ -215,7 +213,7 @@ cleanup() {
 
     echo "Cleaning up rules and terminating..."
     remove_rules
-    
+
     # 终止监控进程
     if [ -f "$PID_FILE" ]; then
         local MONITOR_PID=$(cat "$PID_FILE")
@@ -229,36 +227,67 @@ cleanup() {
 # 监控流量的后台进程
 monitor_traffic() {
     echo $$ > "$PID_FILE"
-    
+
     if [ ! -f "$HANDLE_FILE" ]; then
         echo "Error: Handle file not found at startup: $HANDLE_FILE"
         exit 1
     fi
-    
+
     echo "Starting traffic monitoring with handle file: $HANDLE_FILE"
     echo "Current handles:"
     cat "$HANDLE_FILE"
-    
+
+    local LOG_FILE="$TRAFFIC_DIR/traffic_${LOCAL_PORT}.log"
+    local TEMP_LOG="/tmp/traffic_${LOCAL_PORT}.temp"
+
     while true; do
         if [ ! -f "$HANDLE_FILE" ]; then
             echo "Error: Handle file lost during monitoring: $HANDLE_FILE"
             exit 1
         fi
-        
+
         CURRENT_BYTES=$(check_traffic)
         USED_MB=$((CURRENT_BYTES/1024/1024))
-        
-        echo "$(date '+%Y-%m-%d %H:%M:%S') - Used: ${USED_MB}MB of ${LIMIT_GB}GB (${CURRENT_BYTES} bytes)" >> "$TRAFFIC_DIR/traffic_${LOCAL_PORT}.log"
-        
+
+        # 获取当前时间
+        current_time=$(date '+%Y-%m-%d %H:%M:%S')
+
+        # 保存新日志记录
+        echo "$current_time - Used: ${USED_MB}MB of ${LIMIT_GB}GB (${CURRENT_BYTES} bytes)" >> "$LOG_FILE"
+
+        # 清理超过3分钟的日志
+        if [ -f "$LOG_FILE" ]; then
+            # 计算3分钟前的时间戳
+            cutoff_time=$(date -d '3 minutes ago' '+%Y-%m-%d %H:%M:%S')
+
+            # 使用awk过滤最近3分钟的日志
+            awk -v cutoff="$cutoff_time" '
+            function parse_time(time_str) {
+                cmd = "date -d \"" time_str "\" +%s"
+                cmd | getline timestamp
+                close(cmd)
+                return timestamp
+            }
+            {
+                log_time = substr($1 " " $2, 1, 19)
+                if (parse_time(log_time) >= parse_time(cutoff)) {
+                    print $0
+                }
+            }' "$LOG_FILE" > "$TEMP_LOG"
+
+            # 用临时文件替换原日志文件
+            mv "$TEMP_LOG" "$LOG_FILE"
+        fi
+
         if [[ $(echo "$CURRENT_BYTES > $LIMIT_BYTES" | bc) -eq 1 ]]; then
-            echo "$(date '+%Y-%m-%d %H:%M:%S') - Traffic limit reached ($LIMIT_GB GB). Removing forwarding rules..." >> "$TRAFFIC_DIR/traffic_${LOCAL_PORT}.log"
+            echo "$current_time - Traffic limit reached ($LIMIT_GB GB). Removing forwarding rules..." >> "$LOG_FILE"
             cleanup
             # 等待清理完成
             sleep 2
             exit 0
         fi
-        
-        sleep 5 
+
+        sleep 5
     done
 }
 
