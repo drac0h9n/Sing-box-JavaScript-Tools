@@ -261,22 +261,16 @@ monitor_traffic() {
         if [ -f "$LOG_FILE" ]; then
             # 计算3分钟前的时间戳
             cutoff_time=$(date -d '3 minutes ago' '+%Y-%m-%d %H:%M:%S')
-
+    
             # 使用awk过滤最近3分钟的日志
             awk -v cutoff="$cutoff_time" '
-            function parse_time(time_str) {
-                cmd = "date -d \"" time_str "\" +%s"
-                cmd | getline timestamp
-                close(cmd)
-                return timestamp
-            }
             {
-                log_time = substr($1 " " $2, 1, 19)
-                if (parse_time(log_time) >= parse_time(cutoff)) {
+                log_time = substr($0, 1, 19)
+                if (log_time >= cutoff) {
                     print $0
                 }
             }' "$LOG_FILE" > "$TEMP_LOG"
-
+    
             # 用临时文件替换原日志文件
             mv "$TEMP_LOG" "$LOG_FILE"
         fi
